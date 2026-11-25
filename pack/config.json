@@ -1,0 +1,44 @@
+{
+  "_说明": "空白配置。打包进 exe 的是这一份，不含任何人的持仓、金额或密钥。对方第一次打开时，如果 exe 旁边还没有 config.json，才会复制出来。",
+  "profile": {
+    "owner": "",
+    "capital_total": 0,
+    "injected": 0,
+    "baseline_date": "",
+    "note": ""
+  },
+  "rules": {
+    "tech_cap_ratio": 0.35,
+    "cash_target_ratio": 0.3,
+    "cash_min_ratio": 0.25,
+    "single_fund_cap_ratio": 0.15,
+    "account_stop_add_drawdown": 0.2,
+    "clear": {
+      "rebound_tier1": 5.0,
+      "rebound_tier2": 8.0,
+      "sell_tier1": 0.5,
+      "sell_tier2": 1.0,
+      "single_day_strong": 5.0,
+      "single_day_sell": 0.3,
+      "no_sell_if_drop": -3.0
+    },
+    "core": {
+      "add_on_drop": -3.0,
+      "add_times": 1.5,
+      "base_weekly": 150,
+      "pause_on_rise": 5.0,
+      "trim_profit_rate": 20.0
+    },
+    "hold": {
+      "watch_band": 5.0
+    }
+  },
+  "deepseek": {
+    "api_key": "",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-chat",
+    "max_tokens": 900,
+    "temperature": 0.3
+  },
+  "funds": []
+}

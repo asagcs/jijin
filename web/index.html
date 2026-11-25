@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>基金纪律面板 · G:\money</title>
+<link rel="stylesheet" href="/style.css?v=11" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>基金纪律面板</h1>
+      <p class="sub">Python 记录 · Web 展示 · 数据 <code>G:\money\data\fundlife.db</code></p>
+    </div>
+  </div>
+  <div class="top-right">
+    <span id="modeBadge" class="badge" hidden></span>
+    <span class="meta">更新于 <b id="updated">—</b> · 运行 <b id="runs">0</b> 次</span>
+    <button id="btnEstimate" class="btn btn-est">预计录入 <small>14:30</small></button>
+    <button id="btnFinal" class="btn btn-main">最终更新</button>
+    <button id="btnTrade" class="btn">调仓</button>
+    <button id="btnDca" class="btn">定投策略</button>
+    <button id="btnExport" class="btn">导出给 AI</button>
+    <button id="refresh" class="btn btn-ghost" title="刷新">刷新</button>
+  </div>
+</header>
+
+<section class="cards" id="cards"></section>
+<div class="alertbar" id="alertbar" hidden></div>
+
+<main class="layout">
+  <div class="col-main">
+    <section class="card">
+      <div class="card-head">
+        <h2>组合市值曲线</h2>
+        <span class="hint" id="chartHint"></span>
+      </div>
+      <div class="chart-wrap"><svg id="chart" role="img" aria-label="组合市值曲线"></svg></div>
+      <div class="chart-foot">
+        <span class="legend"><i class="lg total"></i>总市值</span>
+        <span class="legend"><i class="lg cost"></i>持仓成本</span>
+        <span class="legend"><i class="lg tech"></i>科技占比 %（右轴）</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>持仓与今日动作</h2>
+        <div class="tools">
+          <input id="search" class="input" placeholder="搜索基金名称…" />
+          <select id="sort" class="input">
+            <option value="amount">按市值排序</option>
+            <option value="rate">按持有收益排序</option>
+            <option value="rebound">按低点反弹排序</option>
+            <option value="pct">按今日涨跌排序</option>
+          </select>
+        </div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="table-wrap">
+        <table class="funds">
+          <thead>
+            <tr>
+              <th>基金 / 分类</th>
+              <th class="num">今日</th>
+              <th class="num">持有收益</th>
+              <th class="num">低点反弹</th>
+              <th class="num">市值</th>
+              <th class="num">占比</th>
+              <th>今日动作</th>
+            </tr>
+          </thead>
+          <tbody id="fundRows"></tbody>
+        </table>
+      </div>
+      <p class="tiny">点击行可展开理由与备注。红涨绿跌。</p>
+    </section>
+  </div>
+
+  <aside class="col-side">
+    <section class="card">
+      <div class="card-head"><h2>组合体检</h2></div>
+      <ul class="checks" id="checks"></ul>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>历史记录</h2><span class="hint" id="dateCount"></span></div>
+      <ul class="dates" id="dates"></ul>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2 id="adviceTitle">当日建议</h2></div>
+      <div id="adviceBody" class="advice"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>最近调仓</h2><span class="hint" id="tradeHint"></span></div>
+      <ul class="trades" id="trades"></ul>
+    </section>
+  </aside>
+</main>
+
+<footer class="foot">
+  本地面板：写操作只落在本机 state.json 与 fundlife.db，不联网（DeepSeek 除外）· 仅为纪律提示，不构成投资建议
+</footer>
+
+<div class="modal-mask" id="mask" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+
+<script src="/app.js?v=15"></script>
+</body>
+</html>
+
