@@ -47,9 +47,25 @@ def normalize_date(value=None):
         return today_str()
 
 
+_DEFAULT_PLAN_LABELS = {
+    "CORE": "科技核心底仓-保留并小额定投",
+    "CORE_OPT": "科技可选仓-精简时优先砍",
+    "CLEAR": "清理名单-关定投+反弹分批卖",
+    "HOLD": "海外宽基-持有不追加",
+    "HOLD_DEF": "防守配置-持有不动",
+}
+
+
 def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        cfg = json.load(f)
+    cfg.setdefault("funds", [])
+    cfg.setdefault("plan_labels", dict(_DEFAULT_PLAN_LABELS))
+    cfg.setdefault("profile", {})
+    cfg["profile"].setdefault("capital_total", 0)
+    cfg["profile"].setdefault("injected", 0)
+    cfg["profile"].setdefault("baseline_date", "")
+    return cfg
 
 
 def save_config(cfg):

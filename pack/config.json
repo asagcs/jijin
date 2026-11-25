@@ -40,5 +40,12 @@
     "max_tokens": 900,
     "temperature": 0.3
   },
-  "funds": []
+  "funds": [],
+  "plan_labels": {
+    "CORE": "科技核心底仓-保留并小额定投",
+    "CORE_OPT": "科技可选仓-精简时优先砍",
+    "CLEAR": "清理名单-关定投+反弹分批卖",
+    "HOLD": "海外宽基-持有不追加",
+    "HOLD_DEF": "防守配置-持有不动"
+  }
 }

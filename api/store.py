@@ -145,8 +145,7 @@ def load_state():
 
 
 def load_config():
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return engine.load_config()
 
 
 def fetch_all():
@@ -188,7 +187,7 @@ def fetch_all():
             untouched = (s.get("last_date") == st.get("baseline_date") and not s.get("last_pct"))
             funds.append({
                 "id": f["id"], "name": f["name"], "plan": f["plan"],
-                "plan_label": cfg["plan_labels"].get(f["plan"], f["plan"]),
+                "plan_label": (cfg.get("plan_labels") or {}).get(f["plan"], f["plan"]),
                 "tech": bool(f.get("tech")),
                 "amount": round(amt, 2),
                 "cost": round(cost, 2),
@@ -211,7 +210,7 @@ def fetch_all():
     total = sum(x["amount"] for x in funds) if funds else 0.0
     tech = sum(x["amount"] for x in funds if x["tech"]) if funds else 0.0
     cost_total = sum(x["cost"] for x in funds) if funds else 0.0
-    cap = cfg["profile"]["capital_total"]
+    cap = float((cfg.get("profile") or {}).get("capital_total") or 0)
     summary = {
         "total": round(total, 2),
         "cost_total": round(cost_total, 2),
@@ -246,7 +245,7 @@ def fetch_all():
         "advice_by_date": advice_by_date,
         "dates": dates,
         "warnings": json.loads(snaps[-1]["warnings"]) if snaps and snaps[-1]["warnings"] else [],
-        "plan_labels": cfg["plan_labels"],
+        "plan_labels": cfg.get("plan_labels") or {},
         "run_count": runs,
         "trades": trades,
         "db_path": DB_PATH,

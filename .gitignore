@@ -12,6 +12,8 @@ build/
 dist/
 *.spec
 基金纪律面板.exe
+基金纪律面板-*.exe
+*.exe
 
 # ---- 本机运行数据（每人各自一份，勿提交）----
 state.json

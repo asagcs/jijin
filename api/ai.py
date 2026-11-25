@@ -221,28 +221,30 @@ def structure_ocr(cfg, text, funds, date=None):
 
 
 def structure_holdings(cfg, text, funds):
-    """从持仓截图抽出全部基金的名称和市值，不限于已有清单。返回 (items, note, error)。"""
+    """从支付宝等持仓截图抽出名称、当前市值、持有收益率。返回 (items, note, error)。"""
     if not is_ready(cfg):
         return [], "", "未配置 DeepSeek key，只能用手工核对 OCR 原文"
     known = [{"name": f["name"], "code": f.get("code") or ""} for f in funds]
     user = (
-        "下面是基金持仓截图的 OCR 文字。请把页面上每一只持仓都还原出来。\n"
+        "下面是支付宝/基金 App「持仓」截图的 OCR 文字。页面上的金额和收益率，是买卖调仓之后的最新持有结果，不是今日涨跌幅。\n"
+        "请把每一只持仓都还原出来。\n"
         "规则：\n"
         "1) 以截图为准，输出文字里出现的全部基金，不要漏，也不要补文字里没有的。\n"
         "2) name 用完整基金名，份额要保留：联接C 不是联接A，(QDII)C 不是 (QDII)A。\n"
         "3) 如果和下面清单是同一只，name 用清单里的原名；清单里没有的，按截图还原名称，不要丢弃。\n"
-        "4) amount 是当前金额（市值），单位元。可以和上次市值差很多，差得多也要按截图填写，不要改回旧值。\n"
-        "5) 截图里能看到 6 位基金代码就填 code，看不到就填空字符串，不要编造代码。\n"
-        "6) 数字常被拆开或认错：2 常成「乙」，0 常成「口/〇/O」，小数点会丢。"
+        "4) amount 填当前持有金额（市值），单位元。可以和本机旧账差很多（中间有过买卖），差得多也要按截图填写，不要改回旧值，也不要当成单日涨跌去还原。\n"
+        "5) rate 填持有收益率（%）。页面上常见「持有收益 +12.34%」「收益率 -5.6%」。有就填数字，没有就填 null。不要把今日涨跌幅填进 rate。\n"
+        "6) 截图里能看到 6 位基金代码就填 code，看不到就填空字符串，不要编造代码。\n"
+        "7) 数字常被拆开或认错：2 常成「乙」，0 常成「口/〇/O」，小数点会丢。"
         "「乙 601 50」还原为 2601.50。\n"
-        '输出格式：{"items":[{"name":"某某基金C","amount":1000.00,"code":"","confidence":0.9}],"note":""}\n\n'
+        '输出格式：{"items":[{"name":"某某基金C","amount":1000.00,"rate":-5.60,"code":"","confidence":0.9}],"note":""}\n\n'
         "已有清单（只用于对齐名称，不是输出范围）：\n"
         + json.dumps(known, ensure_ascii=False)
         + "\n\nOCR 文字：\n" + text[:9000]
     )
     content, err = _post(cfg, [{"role": "system", "content": STRUCT_SYSTEM},
                                {"role": "user", "content": user}],
-                         max_tokens=2600, temperature=0, timeout=120, json_mode=True)
+                         max_tokens=2800, temperature=0, timeout=120, json_mode=True)
     if err:
         return [], "", err
     data = _parse_json(content)
@@ -262,7 +264,13 @@ def structure_holdings(cfg, text, funds):
         code = str(it.get("code") or "").strip()
         if not re.fullmatch(r"\d{6}", code):
             code = ""
-        items.append({"name": name, "amount": amt, "code": code})
+        rate = None
+        if it.get("rate") not in (None, ""):
+            try:
+                rate = round(float(it.get("rate")), 2)
+            except (TypeError, ValueError):
+                rate = None
+        items.append({"name": name, "amount": amt, "rate": rate, "code": code})
     return items, str(data.get("note") or ""), None
 
 

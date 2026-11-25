@@ -336,14 +336,25 @@ function closeModal() { $('#mask').hidden = true; $('#modal').innerHTML = ''; }
 
 /* 预计 / 最终 录入 */
 function openInput(kind) {
+  if (!S.data) {
+    $('#modeBadge').hidden = false;
+    $('#modeBadge').className = 'badge est';
+    $('#modeBadge').textContent = '数据还没加载好，请先点刷新';
+    return;
+  }
   const isEst = kind === 'estimate';
-  const funds = S.data.funds.slice().sort((a, b) => b.amount - a.amount);
+  const funds = (S.data.funds || []).slice().sort((a, b) => b.amount - a.amount);
+  const emptyHint = !funds.length
+    ? (isEst
+      ? '<tr><td colspan="3" class="tiny">还没有持仓。请先用「最终更新」上传截图建账，或手工录入。</td></tr>'
+      : '<tr><td colspan="3" class="tiny">还没有持仓。请先上传持仓截图，识别后再保存为最终值。</td></tr>')
+    : '';
   const rows = funds.map(f => `
-    <tr data-id="${f.id}" data-prev="${f.amount}">
+    <tr data-id="${f.id}" data-name="${esc(f.name)}" data-code="${esc(f.code || '')}" data-prev="${f.amount}" data-status="keep">
       <td><div class="fn"><b>${esc(f.name)}</b><span>${esc(f.plan === 'CLEAR' ? '清理' : f.plan === 'CORE' ? '核心' : f.plan === 'CORE_OPT' ? '可选' : f.plan === 'HOLD' ? '海外' : '防守')} · 现值 ${money(f.amount)}</span></div></td>
-      <td class="num"><input class="cell" data-id="${f.id}" inputmode="decimal" value="" placeholder="${f.amount.toFixed(2)}"></td>
+      <td class="num"><input class="cell" data-id="${f.id}" inputmode="decimal" value="" placeholder="${Number(f.amount || 0).toFixed(2)}"></td>
       <td class="num"><span class="dlt" data-dlt="${f.id}">—</span></td>
-    </tr>`).join('');
+    </tr>`).join('') || emptyHint;
 
   openModal(`
     <div class="m-head">
@@ -352,11 +363,15 @@ function openInput(kind) {
     </div>
     <p class="m-desc">${isEst
       ? '按你估的收盘值算一遍建议，<b>不入库、不写历史</b>，刷新页面就恢复实际数据。'
-      : '保存后按你确认的名单替换持仓。上传截图时，以识别结果为准：金额用新的，截图里没有的旧基金清掉，新基金补上。'}</p>
+      : (funds.length
+        ? '上传支付宝持仓截图时：金额和持有收益按截图里的最新持有结果写入（已含过去买卖调仓），不会把差额当成今日涨跌。截图里没有的旧基金会清掉。'
+        : '当前还没有持仓。上传支付宝持仓截图，按页面上的市值与持有收益建账后保存即可。')}</p>
 
     ${shotBar(isEst
       ? '传持仓截图，按预估市值填入，核对后再生成建议'
-      : '上传持仓截图。识别结果和原来不一致时，按最新持仓替换')}
+      : (funds.length
+        ? '上传支付宝持仓截图：按当前持有金额和持有收益对齐账本'
+        : '先上传支付宝持仓截图建立名单'))}
 
     <div class="m-tools">
       <span>录入方式</span>
@@ -375,7 +390,7 @@ function openInput(kind) {
     </div>
 
     <div class="m-table"><table class="grid">
-      <thead><tr><th>基金</th><th class="num">${isEst ? '预计市值 / 涨跌幅' : '收盘市值 / 涨跌幅'}</th><th class="num">变化</th></tr></thead>
+      <thead><tr><th>基金</th><th class="num">${isEst ? '预计市值 / 涨跌幅' : '持有金额（元）'}</th><th class="num" id="chgHead">${isEst ? '变化' : '持有收益 / 变化'}</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
 
@@ -389,12 +404,15 @@ function openInput(kind) {
   let mode = 'amount';
   let cells = [...$('#modal').querySelectorAll('.cell')];
   const upd = () => cells.forEach(c => {
-    const prev = +c.closest('tr').dataset.prev;
+    const tr = c.closest('tr');
+    if (!tr || tr.dataset.prev === undefined) return;
+    const prev = +tr.dataset.prev;
     const val = parseFloat(c.value);
-    const dlt = c.closest('tr').querySelector('.dlt');
+    const dlt = tr.querySelector('.dlt');
+    if (!dlt) return;
     if (!isFinite(val) || c.value === '') { dlt.textContent = '—'; dlt.className = 'dlt'; return; }
     let diff;
-    if (mode === 'amount') diff = (val / prev - 1) * 100;
+    if (mode === 'amount') diff = prev > 0 ? (val / prev - 1) * 100 : 0;
     else diff = val;
     dlt.textContent = (diff > 0 ? '+' : '') + diff.toFixed(2) + '%';
     dlt.className = 'dlt ' + cls(diff);
@@ -427,16 +445,32 @@ function openInput(kind) {
       const d = await r.json();
       if (!d.ok) { $('#shotStatus').textContent = '拉取失败：' + (d.error || '未知错误'); btn.disabled = false; return; }
       let n = 0;
+      let todayN = 0;
+      let staleN = 0;
+      const dates = {};
       cells.forEach(c => {
         const it = (d.items || []).find(x => x.id === c.dataset.id);
         if (!it || it.pct === null || it.pct === undefined) return;
         const prev = +c.closest('tr').dataset.prev;
         c.value = mode === 'amount' ? (prev * (1 + it.pct / 100)).toFixed(2) : it.pct.toFixed(2);
         n++;
+        const qd = String(it.date || '').replace(/[/.]/g, '-').slice(0, 10);
+        if (qd) dates[qd] = (dates[qd] || 0) + 1;
+        if (qd === today()) todayN++;
+        else if (qd) staleN++;
       });
       upd();
       const miss = (d.missing || []).length;
-      shotReport(d, `拉到 ${n} 只${miss ? `，${miss} 只无行情` : ''}。${d.note || ''}`);
+      const dateHint = Object.keys(dates).sort().map(k => `${k}×${dates[k]}`).join('、');
+      let summary = `拉到 ${n} 只${miss ? `，${miss} 只无行情` : ''}`;
+      if (dateHint) summary += `；净值日期 ${dateHint}`;
+      if (!isEst && staleN && todayN === 0) {
+        summary += '。注意：这是已公布的上一交易日净值，不是今天的涨跌；今天官方净值通常要更晚才出，盘中请看「拉取盘中估值」';
+      } else if (!isEst && staleN) {
+        summary += `。其中 ${staleN} 只不是今天（多半是 QDII 滞后）`;
+      }
+      if (d.note) summary += `。${d.note}`;
+      shotReport(d, summary);
     } catch (e) {
       $('#shotStatus').textContent = '拉取失败：' + e.message;
     }
@@ -460,16 +494,23 @@ function openInput(kind) {
   };
   const paintRows = list => {
     const tbody = $('#modal').querySelector('tbody');
-    tbody.innerHTML = list.map(h => `
-      <tr data-id="${esc(h.id)}" data-name="${esc(h.name)}" data-code="${esc(h.code || '')}" data-prev="${h.prev}" data-status="${h.status}">
+    const head = $('#chgHead');
+    if (head) head.textContent = '持有收益';
+    tbody.innerHTML = list.map(h => {
+      const rate = (h.rate === null || h.rate === undefined || h.rate === '') ? '' : Number(h.rate);
+      const rateText = rate === '' ? '—' : `${rate > 0 ? '+' : ''}${rate.toFixed(2)}%`;
+      return `
+      <tr data-id="${esc(h.id)}" data-name="${esc(h.name)}" data-code="${esc(h.code || '')}" data-prev="${h.prev}" data-status="${h.status}" data-rate="${rate === '' ? '' : rate}">
         <td class="${h.code ? '' : 'code-gap'}" ${h.code ? '' : 'data-fill-code'}><div class="fn"><b>${esc(h.name)}</b><span>${codeLabel(h)}</span></div></td>
         <td class="num"><input class="cell" data-id="${esc(h.id)}" inputmode="decimal" value="${(+h.amount).toFixed(2)}"></td>
-        <td class="num"><span class="dlt">—</span></td>
-      </tr>`).join('');
+        <td class="num"><span class="dlt ${rate === '' ? '' : cls(rate)}">${rateText}</span></td>
+      </tr>`;
+    }).join('');
     cells = [...$('#modal').querySelectorAll('.cell')];
-    cells.forEach(c => c.oninput = upd);
+    cells.forEach(c => c.oninput = () => {
+      // 截图对齐时右侧固定显示持有收益，不把市值差额当成今日涨跌
+    });
     replacing = true;
-    upd();
   };
   const openCodeInput = tr => {
     if (!tr || tr.querySelector('.code-in')) {
@@ -531,15 +572,15 @@ function openInput(kind) {
       const kept = d.holdings.length - added;
       const gone = (d.removed || []).map(x => x.name);
       const noCode = d.holdings.filter(h => h.status === 'new' && !h.code).length;
-      let summary = `按最新持仓：沿用 ${kept} 只，新增 ${added} 只`;
+      let summary = `按支付宝最新持仓写入：沿用 ${kept} 只，新增 ${added} 只`;
       if (gone.length) summary += `，将清掉 ${gone.length} 只`;
       if (noCode) summary += `，${noCode} 只没查到代码`;
-      summary += '。核对后再保存';
+      summary += '。市值与持有收益按截图绝对值，不会当成今日涨跌';
       shotReport(d, summary);
       const shown = gone.slice(0, 6).join('、');
       $('#mNote').textContent = gone.length
         ? `将清掉 ${gone.length} 只：${shown}${gone.length > 6 ? ' 等' : ''}`
-        : '保存后按这张表替换持仓';
+        : '保存后按截图最新持有结果对齐账本';
       return;
     }
     let n = 0;
@@ -562,11 +603,14 @@ function openInput(kind) {
       if (!isFinite(v) || c.value === '') return;
       values[c.dataset.id] = v;
       const tr = c.closest('tr');
+      const rateRaw = tr.dataset.rate;
+      const rate = rateRaw === '' || rateRaw === undefined ? null : parseFloat(rateRaw);
       holdings.push({
         id: tr.dataset.id || '',
         name: tr.dataset.name || '',
         code: tr.dataset.code || '',
         amount: v,
+        rate: Number.isFinite(rate) ? rate : null,
       });
     });
     if (!(replacing ? holdings.length : Object.keys(values).length)) {
@@ -574,7 +618,7 @@ function openInput(kind) {
       return;
     }
     $('#submitInput').disabled = true;
-    $('#mNote').textContent = '计算中…';
+    $('#mNote').textContent = replacing ? '正在按截图最新持仓对齐…' : '计算中…';
     const payload = replacing
       ? { date: today(), replace: true, holdings }
       : { date: today(), values, mode };
@@ -656,7 +700,14 @@ function renderAdvicePreview(d) {
 
 /* 调仓 */
 function openTrade() {
-  const funds = S.data.funds.slice().sort((a, b) => b.amount - a.amount);
+  if (!S.data) return;
+  const funds = (S.data.funds || []).slice().sort((a, b) => b.amount - a.amount);
+  if (!funds.length) {
+    $('#modeBadge').hidden = false;
+    $('#modeBadge').className = 'badge est';
+    $('#modeBadge').textContent = '还没有持仓，请先用「最终更新」上传截图建账';
+    return;
+  }
   const opts = funds.map(f => `<option value="${f.id}">${esc(f.name)}（${money0(f.amount)} 元）</option>`).join('');
   openModal(`
     <div class="m-head"><h3>记一笔调仓</h3><button class="ico" data-close>×</button></div>
@@ -755,7 +806,14 @@ function syncDcaRow(tr) {
 
 /* 定投策略 */
 function openDca() {
-  const funds = S.data.funds.slice().sort((a, b) => b.amount - a.amount);
+  if (!S.data) return;
+  const funds = (S.data.funds || []).slice().sort((a, b) => b.amount - a.amount);
+  if (!funds.length) {
+    $('#modeBadge').hidden = false;
+    $('#modeBadge').className = 'badge est';
+    $('#modeBadge').textContent = '还没有持仓，请先用「最终更新」上传截图建账';
+    return;
+  }
   const dayOpts = (selected) => [0, 1, 2, 3, 4, 5, 6, 7].map(n =>
     `<option value="${n}" ${Number(selected) === n ? 'selected' : ''}>${n ? DCA_DAY[n] : '—'}</option>`).join('');
   const rows = funds.map(f => {

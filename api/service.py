@@ -171,6 +171,15 @@ def _match_existing(name, funds, used):
     return None
 
 
+def _parse_rate(raw):
+    if raw in (None, ""):
+        return None
+    try:
+        return round(float(raw), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def reconcile_holdings(items):
     """把截图里的持仓对到现有名单。返回 (rows, removed)。不写盘。"""
     cfg = engine.load_config()
@@ -183,9 +192,13 @@ def reconcile_holdings(items):
         for old in rows:
             if row.get("code") and old.get("code") == row["code"]:
                 old["amount"] = row["amount"]
+                if row.get("rate") is not None:
+                    old["rate"] = row["rate"]
                 return
             if row.get("id") and old.get("id") == row["id"]:
                 old["amount"] = row["amount"]
+                if row.get("rate") is not None:
+                    old["rate"] = row["rate"]
                 return
         rows.append(row)
 
@@ -200,6 +213,7 @@ def reconcile_holdings(items):
         code = str(it.get("code") or "").strip()
         if not re.fullmatch(r"\d{6}", code):
             code = ""
+        rate = _parse_rate(it.get("rate"))
         fund = _match_existing(name, funds, used)
         if fund is None and code:
             fund = next((f for f in funds if f["id"] not in used and str(f.get("code") or "") == code), None)
@@ -216,11 +230,11 @@ def reconcile_holdings(items):
                 "name": fund["name"],
                 "code": got,
                 "amount": amt,
+                "rate": rate,
                 "prev": prev,
                 "status": "keep",
             })
             continue
-        found = None
         if not code:
             found = _lookup_code(name)
             if found:
@@ -238,6 +252,7 @@ def reconcile_holdings(items):
                         "name": fund["name"],
                         "code": code or str(fund.get("code") or ""),
                         "amount": amt,
+                        "rate": rate,
                         "prev": prev,
                         "status": "keep",
                     })
@@ -247,6 +262,7 @@ def reconcile_holdings(items):
             "name": name,
             "code": code,
             "amount": amt,
+            "rate": rate,
             "prev": amt,
             "status": "new",
         })
@@ -264,7 +280,7 @@ def _alloc_id(code, name, used):
 
 
 def finalize_replace(date, holdings):
-    """按截图结果替换持仓：旧的不在名单里就删掉，新的补上，金额用最新的。"""
+    """按支付宝持仓截图对齐账本：市值、持有收益按截图绝对值写入，不当成今日涨跌。"""
     date = engine.normalize_date(date)
     cleaned = []
     for h in holdings or []:
@@ -283,72 +299,112 @@ def finalize_replace(date, holdings):
             "name": name,
             "code": code,
             "amount": amt,
+            "rate": _parse_rate(h.get("rate")),
         })
     if not cleaned:
         return None, "没有可用的持仓，原来的名单没有改"
+
     cfg = engine.load_config()
     st = _load(cfg)
     by_id = {f["id"]: f for f in cfg["funds"]}
     used = set()
     kept = []
-    values = {}
+    marker = {}
+
     for h in cleaned:
         fid = h["id"]
         fund = by_id.get(fid) if fid else None
-        if fund and fid not in used:
-            if h["code"] and not fund.get("code"):
-                fund["code"] = h["code"]
-            slot = st["funds"].setdefault(fid, {
-                "amount": 0.0, "cost": 0.0, "px": 100.0, "px_min": 100.0, "px_max": 100.0,
-                "dca_on": bool(fund.get("dca")), "last_pct": 0.0, "last_date": date,
-                "sold": 0.0, "notes": [],
-            })
-            if float(slot.get("amount") or 0) <= 0.5:
-                slot["amount"] = h["amount"]
-                if not slot.get("cost"):
-                    slot["cost"] = h["amount"]
-            used.add(fid)
-            values[fid] = h["amount"]
-            kept.append(fund)
-            continue
-        fid = _alloc_id(h["code"], h["name"], set(by_id) | used)
-        fund = {
-            "id": fid,
-            "name": h["name"],
-            "code": h["code"],
-            "plan": "HOLD",
-            "tech": _looks_tech(h["name"]),
-            "amount": h["amount"],
-            "rate": 0,
-            "dca": False,
-            "dca_weekly": 0,
-            "dca_cycle": "weekly",
-            "dca_weekday": 0,
-            "dca_amount": 0,
-            "note": "",
-        }
-        st["funds"][fid] = {
-            "amount": h["amount"],
-            "cost": h["amount"],
-            "px": 100.0,
-            "px_min": 100.0,
-            "px_max": 100.0,
-            "dca_on": False,
-            "last_pct": 0.0,
-            "last_date": date,
-            "sold": 0.0,
-            "notes": [],
-        }
+        if not (fund and fid not in used):
+            fid = _alloc_id(h["code"], h["name"], set(by_id) | used)
+            fund = {
+                "id": fid,
+                "name": h["name"],
+                "code": h["code"],
+                "plan": "HOLD",
+                "tech": _looks_tech(h["name"]),
+                "amount": h["amount"],
+                "rate": 0,
+                "dca": False,
+                "dca_weekly": 0,
+                "dca_cycle": "weekly",
+                "dca_weekday": 0,
+                "dca_amount": 0,
+                "note": "",
+            }
+            by_id[fid] = fund
+            st["funds"][fid] = {
+                "amount": h["amount"],
+                "cost": h["amount"],
+                "px": 100.0,
+                "px_min": 100.0,
+                "px_max": 100.0,
+                "dca_on": False,
+                "last_pct": 0.0,
+                "last_date": date,
+                "sold": 0.0,
+                "notes": [],
+            }
+
+        if h["code"] and not fund.get("code"):
+            fund["code"] = h["code"]
+
+        slot = st["funds"].setdefault(fid, {
+            "amount": 0.0, "cost": 0.0, "px": 100.0, "px_min": 100.0, "px_max": 100.0,
+            "dca_on": bool(fund.get("dca")), "last_pct": 0.0, "last_date": date,
+            "sold": 0.0, "notes": [],
+        })
+        amt = h["amount"]
+        rate = h["rate"]
+        if rate is not None:
+            cost = round(amt / (1 + rate / 100.0), 2) if (1 + rate / 100.0) != 0 else amt
+        else:
+            old_cost = float(slot.get("cost") or 0)
+            cost = old_cost if old_cost > 0 else amt
+            rate = round((amt / cost - 1) * 100, 2) if cost else 0.0
+
+        slot["amount"] = amt
+        slot["cost"] = cost
+        # 截图是买卖后的最新持有结果，不能把差额当成今日涨跌去推 px
+        slot["last_pct"] = 0.0
+        slot["last_date"] = date
+        slot["px"] = 100.0
+        slot["px_min"] = 100.0
+        slot["px_max"] = 100.0
+
+        fund["amount"] = amt
+        fund["rate"] = rate
         used.add(fid)
-        values[fid] = h["amount"]
+        marker[fid] = 0.0
         kept.append(fund)
+
     for fid in list((st.get("funds") or {})):
         if fid not in used:
             st["funds"].pop(fid, None)
     cfg["funds"] = kept
+    if not (cfg.get("profile") or {}).get("baseline_date"):
+        cfg.setdefault("profile", {})["baseline_date"] = date
+    if not st.get("baseline_date"):
+        st["baseline_date"] = date
+
+    st["runs"] = int(st.get("runs") or 0) + 1
+    st.setdefault("history", []).append({
+        "date": date, "run_at": engine.now_str(),
+        "changes": [{"id": fid, "pct": 0.0, "sync": "screenshot"} for fid in marker],
+    })
+    st["history"] = st["history"][-400:]
+
+    records, portfolio, warnings = engine.judge(cfg, st)
     engine.save_config(cfg)
     engine.save_state(st)
-    return finalize(date, values, mode="amount", source="screenshot")
+    path = engine.write_report(records, portfolio, warnings, date, None)
+    store.record_run(date, cfg, st, records, portfolio, warnings, marker)
+    return _payload(records, portfolio, warnings, "final", date, {
+        "persisted": True,
+        "ignored": [],
+        "report": path,
+        "source": "screenshot",
+        "sync": "absolute",
+    }), None
 
 
 def trade(date, fund_id, side, amount, to_fund_id=None, note=""):
